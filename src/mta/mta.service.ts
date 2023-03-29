@@ -3,38 +3,100 @@ import * as protobuf from 'protobufjs';
 import * as stationsJson from './stations.json';
 import { writeFile } from 'fs/promises';
 import { TRAIN_URL } from './feed-urls';
+import fetch from 'node-fetch';
 
 @Injectable()
 export class MtaService {
+  
+  private root;
+  private FeedMessage;
+  private trains = [];
+
+  constructor() {
+    this.root = protobuf.loadSync([
+      'proto/gtfs-realtime.proto',
+      'proto/nyct-subway.proto',
+    ]);
+    this.FeedMessage = this.root.lookupType('transit_realtime.FeedMessage');
+  }
+
+  urls = [
+    'L',
+    'NQRW',
+    'BDFM',
+    'ACE',
+    'JZ',
+    'G',
+    'NUMBERED',
+  ];
+
   feedUrls = [
     TRAIN_URL.L,
     TRAIN_URL.NQRW,
     TRAIN_URL.BDFM,
     TRAIN_URL.ACE,
     TRAIN_URL.JZ,
-    TRAIN_URL.SIR,
     TRAIN_URL.G,
     TRAIN_URL.NUMBERED,
   ];
-  async getTrain() {
-    //add x-api-key to headers
-    //https://api.mta.info/#/subwayRealTimeFeeds
-    const response = await fetch(TRAIN_URL.L, {
+
+  // load all trains from mta api from constructor
+  async loadTrains() {
+    for (const url of this.feedUrls) {
+      console.log(url);
+      const train = await this.getTrain(url);
+      this.trains.push(train);
+    }
+    return this.trains;
+  }
+
+  // cron job to update trains every minute
+  async updateTrains() {
+    const trains = await this.loadTrains();
+  }
+
+  // get all trains from mta api
+  async getTrains() {
+    const trains = [];
+    for (const url of this.urls) {
+      console.log(url);
+      const train = await this.getTrain(url);
+      trains.push(train);
+    }
+    console.log(trains.length);
+    return trains[3];
+  }
+
+  //https://api.mta.info/#/subwayRealTimeFeeds
+  async getTrain(url: string): Promise<any> {
+    let trainUrl = '';
+    if (url === 'L') {
+      trainUrl = TRAIN_URL.L;
+    } else if (url === 'NQRW') {
+      trainUrl = TRAIN_URL.NQRW;
+    } else if (url === 'BDFM') {
+      trainUrl = TRAIN_URL.BDFM;
+    } else if (url === 'ACE') {
+      trainUrl = TRAIN_URL.ACE;
+    } else if (url === 'JZ') {
+      trainUrl = TRAIN_URL.JZ;
+    } else if (url === 'G') {
+      trainUrl = TRAIN_URL.G;
+    } else if (url === 'NUMBERED') {
+      trainUrl = TRAIN_URL.NUMBERED;
+    } else {
+      trainUrl = TRAIN_URL.L;
+    }
+
+    const response = await fetch(trainUrl, {
       headers: {
         'x-api-key': 'OhiIwruKi0avA98lwhGi125DN9CGHGAo6HWF7If8',
       },
     });
 
-    console.log(stationsJson);
-
     const buffer = await response.arrayBuffer();
-    const root = await protobuf.load([
-      'proto/gtfs-realtime.proto',
-      'proto/nyct-subway.proto',
-    ]);
-    const FeedMessage = root.lookupType('transit_realtime.FeedMessage');
-    const feed = FeedMessage.decode(new Uint8Array(buffer));
-    const message = FeedMessage.toObject(feed, {
+    const feed = this.FeedMessage.decode(new Uint8Array(buffer));
+    const message = this.FeedMessage.toObject(feed, {
       longs: String,
       enums: String,
       bytes: String,
